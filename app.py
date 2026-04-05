@@ -1,3 +1,9 @@
+"""
+app.py — Flask + SocketIO server for Dual-Stream Fatigue Detector
+Run locally : python app.py
+Deploy      : gunicorn --worker-class eventlet -w 1 app:app --bind 0.0.0.0:$PORT
+"""
+
 import os, warnings
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
@@ -14,13 +20,13 @@ app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "neuralwatch-secret-2024")
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
 
-# MediaPipe
+# ── MediaPipe ─────────────────────────────────────────
 mp_face_mesh = mp.solutions.face_mesh
 face_mesh    = mp_face_mesh.FaceMesh(
     max_num_faces=1,
     refine_landmarks=True,
-    min_detection_confidence=0.5,
-    min_tracking_confidence=0.5
+    min_detection_confidence=0.2,
+    min_tracking_confidence=0.2
 )
 
 LEFT_EYE          = [362, 385, 387, 263, 373, 380]
@@ -36,7 +42,7 @@ MODEL_POINTS_3D = np.array([
     (150.0, -150.0, -125.0),
 ], dtype=np.float64)
 
-# Config 
+# ── Config ────────────────────────────────────────────
 EAR_THRESHOLD     = 0.25
 EAR_CONSEC_FRAMES = 2
 PERCLOS_WINDOW    = 30
@@ -45,7 +51,7 @@ PITCH_THRESH      = 15.0
 HEAD_NOD_WINDOW   = 60
 HEAD_NOD_COUNT    = 3
 
-# Session state 
+# ── Session state ─────────────────────────────────────
 sessions = {}
 
 def new_session():
@@ -56,7 +62,7 @@ def new_session():
         "pitch_history": deque(maxlen=HEAD_NOD_WINDOW),
     }
 
-# Helpers 
+# ── Helpers ───────────────────────────────────────────
 def eye_aspect_ratio(pts):
     A = dist.euclidean(pts[1], pts[5])
     B = dist.euclidean(pts[2], pts[4])
@@ -81,7 +87,7 @@ def head_pose(lm, w, h):
     angles, *_ = cv2.RQDecomp3x3(rmat)
     return float(angles[0]), float(angles[1])
 
-# Routes 
+# ── Routes ────────────────────────────────────────────
 @app.route("/")
 def index():
     return render_template("index.html")
@@ -90,7 +96,7 @@ def index():
 def health():
     return jsonify({"status": "ok"})
 
-# Socket events 
+# ── Socket events ─────────────────────────────────────
 @socketio.on("connect")
 def on_connect(auth=None):
     sessions[request.sid] = new_session()
@@ -117,8 +123,24 @@ def on_frame(data):
         return
 
     h, w = frame.shape[:2]
+
+    # Resize to standard size for consistent detection
+    if w != 640:
+        scale = 640 / w
+        frame = cv2.resize(frame, (640, int(h * scale)))
+        h, w  = frame.shape[:2]
+
+    # Enhance contrast for better detection under varied lighting
+    lab   = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
+    l, a, b = cv2.split(lab)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    l     = clahe.apply(l)
+    frame = cv2.cvtColor(cv2.merge([l, a, b]), cv2.COLOR_LAB2BGR)
+
     rgb  = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    rgb.flags.writeable = False
     res  = face_mesh.process(rgb)
+    rgb.flags.writeable = True
 
     ear = 0.0; perclos = 0.0; pitch = 0.0; yaw = 0.0; nod_count = 0
     face_detected = False
