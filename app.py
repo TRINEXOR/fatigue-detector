@@ -1,9 +1,3 @@
-"""
-app.py — Flask + SocketIO server for Dual-Stream Fatigue Detector
-Run locally : python app.py
-Deploy      : gunicorn --worker-class eventlet -w 1 app:app --bind 0.0.0.0:$PORT
-"""
-
 import os, warnings
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
@@ -191,7 +185,8 @@ def on_frame(data):
         "fatigue_level": fatigue_level,
     })
 
+import os
+
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    print("Server starting on http://localhost:5000")
-    socketio.run(app, host="0.0.0.0", port=5000)
+    port = int(os.environ.get("PORT", 10000))
+    socketio.run(app, host="0.0.0.0", port=port)
