@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NeuralWatch AI — Cognitive Fatigue Analysis System</title>
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;400;600;700&display=swap');
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#010409;--panel:rgba(4,12,28,0.94);
+  --c1:#00ffe7;--c2:#0080ff;--c3:#ff2d78;--c4:#ffcc00;
+  --g1:rgba(0,255,231,0.15);--g3:rgba(255,45,120,0.15);
+  --dim:rgba(100,180,200,0.3);--text:#c5e8f0;
+  --mono:'Orbitron',monospace;--sans:'Rajdhani',sans-serif;
+}
+html,body{height:100%;overflow:hidden;cursor:crosshair}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);display:flex;flex-direction:column;height:100vh}
+
+/* BOOT */
+#boot{position:fixed;inset:0;z-index:9999;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;transition:opacity .8s}
+#boot.fade{opacity:0;pointer-events:none}
+.boot-logo{font-family:var(--mono);font-size:2rem;font-weight:900;color:var(--c1);letter-spacing:.2em;text-shadow:0 0 40px var(--c1),0 0 80px rgba(0,255,231,.4);animation:bg 1s ease-in-out infinite alternate}
+@keyframes bg{from{text-shadow:0 0 20px var(--c1)}to{text-shadow:0 0 60px var(--c1),0 0 100px rgba(0,255,231,.5)}}
+.boot-track{width:300px;height:3px;background:#111;border-radius:2px;overflow:hidden}
+.boot-fill{height:100%;background:linear-gradient(90deg,var(--c2),var(--c1));width:0%;border-radius:2px;box-shadow:0 0 10px var(--c1);animation:bl 2.2s ease forwards}
+@keyframes bl{to{width:100%}}
+.boot-msg{font-family:var(--mono);font-size:.5rem;letter-spacing:.2em;color:rgba(0,255,231,.5)}
+
+/* PARTICLES */
+#pc{position:fixed;inset:0;z-index:0;pointer-events:none}
+
+/* SCANLINES */
+.sl{position:fixed;inset:0;z-index:2;pointer-events:none;background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,.1) 3px,rgba(0,0,0,.1) 4px)}
+
+/* HEADER */
+header{position:relative;z-index:10;height:54px;background:rgba(1,8,18,.97);border-bottom:1px solid rgba(0,255,231,.18);display:flex;align-items:center;padding:0 18px;flex-shrink:0;box-shadow:0 0 30px rgba(0,255,231,.06)}
+.logo-ring{width:30px;height:30px;border:1.5px solid var(--c1);border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 0 12px var(--c1),inset 0 0 8px rgba(0,255,231,.1);animation:spin 8s linear infinite;flex-shrink:0}
+.logo-ring::before{content:'';width:9px;height:9px;border-radius:50%;background:var(--c1);box-shadow:0 0 8px var(--c1)}
+@keyframes spin{to{transform:rotate(360deg)}}
+.logo-txt{font-family:var(--mono);font-weight:900;font-size:.95rem;letter-spacing:.15em;color:var(--c1);text-shadow:0 0 18px rgba(0,255,231,.5);margin-left:10px}
+.logo-txt span{color:var(--c2)}
+.hdr-center{margin:0 auto;font-family:var(--mono);font-size:.46rem;letter-spacing:.22em;color:var(--dim);text-align:center;line-height:1.7}
+.hdr-right{display:flex;align-items:center;gap:14px;font-family:var(--mono);font-size:.46rem;letter-spacing:.14em}
+.pill{padding:3px 10px;border-radius:2px;border:1px solid;font-size:.46rem;letter-spacing:.14em;transition:all .3s}
+.p-s{border-color:var(--dim);color:var(--dim)}
+.p-l{border-color:var(--c1);color:var(--c1);box-shadow:0 0 8px rgba(0,255,231,.25);animation:pp 1.5s infinite}
+.p-w{border-color:var(--c4);color:var(--c4);box-shadow:0 0 8px rgba(255,204,0,.25)}
+.p-d{border-color:var(--c3);color:var(--c3);box-shadow:0 0 8px rgba(255,45,120,.35);animation:pp .5s infinite}
+@keyframes pp{0%,100%{opacity:1}50%{opacity:.45}}
+#clk{color:var(--dim);font-size:.52rem;min-width:68px;text-align:right}
+
+/* GRID */
+main{position:relative;z-index:10;flex:1;min-height:0;display:grid;grid-template-columns:196px 1fr 196px;grid-template-rows:1fr 108px;gap:1px;background:rgba(0,255,231,.05)}
+
+/* PANELS */
+.panel{background:var(--panel);position:relative;overflow:hidden}
+.panel::before,.panel::after{content:'';position:absolute;width:10px;height:10px;border-color:var(--c1);border-style:solid;opacity:.4;z-index:5}
+.panel::before{top:5px;left:5px;border-width:1px 0 0 1px}
+.panel::after{bottom:5px;right:5px;border-width:0 1px 1px 0}
+.plbl{position:absolute;top:12px;left:14px;font-family:var(--mono);font-size:.44rem;letter-spacing:.2em;color:var(--c1);opacity:.65;z-index:6;text-transform:uppercase}
+
+/* LEFT METRICS */
+.panel-left{display:flex;flex-direction:column;gap:1px;background:rgba(0,255,231,.04)}
+.mc{background:var(--panel);flex:1;padding:0 14px;display:flex;flex-direction:column;justify-content:center;position:relative;overflow:hidden;transition:background .4s}
+.mc::before,.mc::after{display:none}
+.mc.aw{background:rgba(255,204,0,.05)}
+.mc.ad{background:rgba(255,45,120,.07)}
+.mc-tag{font-family:var(--mono);font-size:.42rem;letter-spacing:.18em;color:var(--dim);text-transform:uppercase;margin-bottom:2px}
+.mc-val{font-family:var(--mono);font-weight:700;font-size:1.45rem;line-height:1;color:var(--c1);transition:color .4s;text-shadow:0 0 10px rgba(0,255,231,.35)}
+.mc-val.w{color:var(--c4);text-shadow:0 0 10px rgba(255,204,0,.35)}
+.mc-val.d{color:var(--c3);text-shadow:0 0 10px rgba(255,45,120,.45)}
+.mc-bar{margin-top:5px;height:2px;background:rgba(255,255,255,.04);border-radius:1px;overflow:hidden}
+.mc-fill{height:100%;border-radius:1px;background:var(--c1);transition:width .5s ease,background .4s;width:0%;box-shadow:0 0 5px var(--c1)}
+
+/* CENTER */
+.panel-center{position:relative;background:#000}
+#webcam{width:100%;height:100%;object-fit:cover;transform:scaleX(-1);opacity:.82;display:none}
+.hcorners{position:absolute;inset:0;z-index:6;pointer-events:none}
+.hc{position:absolute;width:34px;height:34px}
+.hc.tl{top:14px;left:14px;border-top:2px solid var(--c1);border-left:2px solid var(--c1);box-shadow:-2px -2px 8px rgba(0,255,231,.25)}
+.hc.tr{top:14px;right:14px;border-top:2px solid var(--c1);border-right:2px solid var(--c1);box-shadow:2px -2px 8px rgba(0,255,231,.25)}
+.hc.bl{bottom:14px;left:14px;border-bottom:2px solid var(--c1);border-left:2px solid var(--c1);box-shadow:-2px 2px 8px rgba(0,255,231,.25)}
+.hc.br{bottom:14px;right:14px;border-bottom:2px solid var(--c1);border-right:2px solid var(--c1);box-shadow:2px 2px 8px rgba(0,255,231,.25)}
+.reticle{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:7;pointer-events:none;animation:rspin 6s linear infinite}
+@keyframes rspin{to{transform:translate(-50%,-50%) rotate(360deg)}}
+.sweep{position:absolute;inset:0;z-index:5;pointer-events:none;overflow:hidden}
+.sw-line{position:absolute;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,rgba(0,255,231,.7) 50%,transparent);animation:sw 2.5s ease-in-out infinite}
+.sw-glow{position:absolute;left:0;right:0;height:80px;background:linear-gradient(180deg,rgba(0,255,231,.1) 0%,transparent 100%);animation:sw 2.5s ease-in-out infinite}
+@keyframes sw{0%{top:-3px}100%{top:100%}}
+.hud-d{position:absolute;z-index:8;font-family:var(--mono);font-size:.44rem;letter-spacing:.1em;color:var(--c1);pointer-events:none;text-shadow:0 0 5px var(--c1);line-height:1.8}
+.hd-tl{top:52px;left:18px}.hd-tr{top:52px;right:18px;text-align:right}
+.hd-bl{bottom:18px;left:18px}.hd-br{bottom:18px;right:18px;text-align:right}
+#ao{position:absolute;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;pointer-events:none;opacity:0;transition:opacity .3s}
+#ao.show{opacity:1}
+#ao.warn{background:rgba(255,204,0,.06)}
+#ao.danger{background:rgba(255,45,120,.09);animation:df .2s infinite}
+@keyframes df{0%,100%{opacity:1}50%{opacity:.8}}
+.abox{border:1px solid currentColor;padding:12px 26px;text-align:center;backdrop-filter:blur(4px)}
+.warn .abox{color:var(--c4);background:rgba(255,204,0,.07);box-shadow:0 0 30px rgba(255,204,0,.2)}
+.danger .abox{color:var(--c3);background:rgba(255,45,120,.09);box-shadow:0 0 40px rgba(255,45,120,.3)}
+.atitle{font-family:var(--mono);font-size:.8rem;font-weight:700;letter-spacing:.2em;text-transform:uppercase}
+.asub{font-size:.56rem;letter-spacing:.12em;opacity:.7;margin-top:4px}
+#start-btn{position:absolute;z-index:30;background:transparent;border:1px solid var(--c1);color:var(--c1);font-family:var(--mono);font-size:.65rem;letter-spacing:.2em;text-transform:uppercase;padding:13px 34px;cursor:crosshair;transition:all .3s;box-shadow:0 0 20px rgba(0,255,231,.12),inset 0 0 20px rgba(0,255,231,.04)}
+#start-btn:hover{background:rgba(0,255,231,.08);box-shadow:0 0 40px rgba(0,255,231,.35),inset 0 0 30px rgba(0,255,231,.08);letter-spacing:.28em}
+
+/* RIGHT */
+.panel-right{display:flex;flex-direction:column;padding:34px 14px 10px;gap:10px}
+.orb-wrap{display:flex;flex-direction:column;align-items:center;gap:4px}
+#orbc{width:126px;height:126px}
+.orb-score{font-family:var(--mono);font-weight:900;font-size:2.6rem;line-height:1;color:var(--c1);text-align:center;transition:color .5s,text-shadow .5s;text-shadow:0 0 18px rgba(0,255,231,.55)}
+.orb-score.w{color:var(--c4);text-shadow:0 0 18px rgba(255,204,0,.55)}
+.orb-score.d{color:var(--c3);text-shadow:0 0 18px rgba(255,45,120,.65);animation:shake .15s infinite}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-2px)}75%{transform:translateX(2px)}}
+.orb-lbl{font-family:var(--mono);font-size:.42rem;letter-spacing:.18em;color:var(--dim);text-align:center}
+.sblock{border:1px solid rgba(0,255,231,.1);padding:7px 9px;transition:border-color .4s}
+.sblock.aw{border-color:rgba(255,204,0,.35)}
+.sblock.ad{border-color:rgba(255,45,120,.45)}
+.srow{display:flex;justify-content:space-between;align-items:center;margin-bottom:5px}
+.sname{font-family:var(--mono);font-size:.42rem;letter-spacing:.14em;color:var(--dim)}
+.sbadge{font-family:var(--mono);font-size:.4rem;letter-spacing:.1em;padding:2px 6px;border-radius:1px;transition:all .3s}
+.b-ok{border:1px solid rgba(0,255,231,.35);color:var(--c1)}
+.b-w{border:1px solid var(--c4);color:var(--c4);background:rgba(255,204,0,.07)}
+.b-d{border:1px solid var(--c3);color:var(--c3);background:rgba(255,45,120,.08);animation:pp .6s infinite}
+.sbar{height:3px;background:rgba(255,255,255,.04);border-radius:1px;overflow:hidden}
+.sfill{height:100%;border-radius:1px;background:var(--c1);width:0%;transition:width .5s ease,background .4s}
+.bblock{text-align:center;border:1px solid rgba(0,255,231,.08);padding:7px}
+.bnum{font-family:var(--mono);font-weight:700;font-size:1.5rem;color:var(--c2);text-shadow:0 0 10px rgba(0,128,255,.45);line-height:1}
+.btag{font-family:var(--mono);font-size:.4rem;letter-spacing:.14em;color:var(--dim);margin-top:2px}
+#logp{flex:1;overflow-y:auto;font-family:var(--mono);font-size:.42rem;letter-spacing:.09em;color:rgba(0,255,231,.28);line-height:2}
+#logp::-webkit-scrollbar{width:2px}
+#logp::-webkit-scrollbar-thumb{background:rgba(0,255,231,.18)}
+
+/* BOTTOM */
+.pbot{padding:6px 12px 5px;display:flex;flex-direction:column;gap:3px}
+.wlbl{font-family:var(--mono);font-size:.4rem;letter-spacing:.16em;color:rgba(0,255,231,.38);text-transform:uppercase}
+canvas.wv{width:100%;height:54px;display:block}
+
+/* FOOTER */
+footer{position:relative;z-index:10;height:25px;background:rgba(1,8,18,.97);border-top:1px solid rgba(0,255,231,.1);display:flex;align-items:center;padding:0 18px;gap:22px;font-family:var(--mono);font-size:.42rem;letter-spacing:.14em;color:var(--dim);flex-shrink:0}
+.fd{width:4px;height:4px;border-radius:50%;background:var(--dim);display:inline-block;margin-right:4px;vertical-align:middle;transition:all .3s}
+.fd.on{background:var(--c1);box-shadow:0 0 5px var(--c1)}
+footer span:last-child{margin-left:auto}
+</style>
+</head>
+<body>
+
+<div id="boot">
+  <div class="boot-logo">NEURALWATCH AI</div>
+  <div class="boot-track"><div class="boot-fill"></div></div>
+  <div class="boot-msg">INITIALIZING DUAL-STREAM COGNITIVE ANALYSIS ENGINE...</div>
+</div>
+
+<div class="sl"></div>
+<canvas id="pc"></canvas>
+
+<header>
+  <div class="logo-ring"></div>
+  <div class="logo-txt">Neural<span>Watch</span></div>
+  <div class="hdr-center">
+    DUAL-STREAM FATIGUE DETECTION SYSTEM<br>
+    <span style="font-size:.4rem;opacity:.5">EYE-BLINK ANALYSIS · HEAD-POSE ESTIMATION · TEMPORAL FUSION · B.TECH AIML</span>
+  </div>
+  <div class="hdr-right">
+    <div class="pill p-s" id="sys-pill">STANDBY</div>
+    <div id="clk">--:--:--</div>
+  </div>
+</header>
+
+<main>
+
+  <!-- LEFT -->
+  <div class="panel-left">
+    <div class="mc" id="mc-ear">
+      <div class="mc-tag">Eye aspect ratio</div>
+      <div class="mc-val" id="v-ear">-.---</div>
+      <div class="mc-bar"><div class="mc-fill" id="b-ear"></div></div>
+    </div>
+    <div class="mc" id="mc-pc">
+      <div class="mc-tag">PERCLOS index</div>
+      <div class="mc-val" id="v-pc">-.--%</div>
+      <div class="mc-bar"><div class="mc-fill" id="b-pc"></div></div>
+    </div>
+    <div class="mc" id="mc-pt">
+      <div class="mc-tag">Head pitch</div>
+      <div class="mc-val" id="v-pt">-.--°</div>
+      <div class="mc-bar"><div class="mc-fill" id="b-pt"></div></div>
+    </div>
+    <div class="mc" id="mc-yw">
+      <div class="mc-tag">Head yaw</div>
+      <div class="mc-val" id="v-yw">-.--°</div>
+      <div class="mc-bar"><div class="mc-fill" id="b-yw"></div></div>
+    </div>
+  </div>
+
+  <!-- CENTER VIDEO -->
+  <div class="panel panel-center">
+    <div class="hcorners">
+      <div class="hc tl"></div><div class="hc tr"></div>
+      <div class="hc bl"></div><div class="hc br"></div>
+    </div>
+    <div class="sweep"><div class="sw-line"></div><div class="sw-glow"></div></div>
+    <div class="reticle">
+      <svg width="58" height="58" viewBox="0 0 58 58" fill="none">
+        <circle cx="29" cy="29" r="27" stroke="rgba(0,255,231,0.18)" stroke-width="0.5"/>
+        <circle cx="29" cy="29" r="19" stroke="rgba(0,255,231,0.28)" stroke-width="0.5" stroke-dasharray="4 4"/>
+        <line x1="29" y1="2" x2="29" y2="11" stroke="#00ffe7" stroke-width="1.5"/>
+        <line x1="29" y1="47" x2="29" y2="56" stroke="#00ffe7" stroke-width="1.5"/>
+        <line x1="2" y1="29" x2="11" y2="29" stroke="#00ffe7" stroke-width="1.5"/>
+        <line x1="47" y1="29" x2="56" y2="29" stroke="#00ffe7" stroke-width="1.5"/>
+        <circle cx="29" cy="29" r="2" fill="#00ffe7" opacity="0.75"/>
+      </svg>
+    </div>
+    <video id="webcam" autoplay muted playsinline></video>
+    <div class="hud-d hd-tl" id="hd-tl">SENSOR: OFFLINE<br>STREAM: INACTIVE</div>
+    <div class="hud-d hd-tr" id="hd-tr">FPS: --<br>RES: 640x480</div>
+    <div class="hud-d hd-bl" id="hd-bl">FRAMES: 0<br>LAT: &lt;1ms</div>
+    <div class="hud-d hd-br" id="hd-br">NOD: 0<br>BLINK: 0</div>
+    <div id="ao">
+      <div class="abox">
+        <div class="atitle" id="atitle"></div>
+        <div class="asub" id="asub"></div>
+      </div>
+    </div>
+    <button id="start-btn" onclick="initSensor()">&#9654; INITIALISE SENSOR</button>
+  </div>
+
+  <!-- RIGHT -->
+  <div class="panel panel-right">
+    <div class="plbl">Alertness Index</div>
+    <div class="orb-wrap">
+      <canvas id="orbc" width="126" height="126"></canvas>
+      <div class="orb-score" id="oscore">0</div>
+      <div class="orb-lbl" id="olbl">System ready</div>
+    </div>
+    <div class="sblock" id="sb-eye">
+      <div class="srow">
+        <span class="sname">EYE BLINK STREAM</span>
+        <span class="sbadge b-ok" id="eye-badge">NOMINAL</span>
+      </div>
+      <div class="sbar"><div class="sfill" id="eye-fill"></div></div>
+    </div>
+    <div class="sblock" id="sb-head">
+      <div class="srow">
+        <span class="sname">HEAD POSE STREAM</span>
+        <span class="sbadge b-ok" id="head-badge">NOMINAL</span>
+      </div>
+      <div class="sbar"><div class="sfill" id="head-fill"></div></div>
+    </div>
+    <div class="bblock">
+      <div class="bnum" id="bnum">000</div>
+      <div class="btag">Total blinks recorded</div>
+    </div>
+    <div id="logp"></div>
+  </div>
+
+  <!-- BOTTOM WAVEFORMS -->
+  <div class="panel pbot" style="grid-column:1">
+    <div class="wlbl">EAR signal</div>
+    <canvas class="wv" id="we" width="192" height="54"></canvas>
+  </div>
+  <div class="panel pbot" style="grid-column:2">
+    <div class="wlbl">PERCLOS trend — 30-frame sliding window</div>
+    <canvas class="wv" id="wp" width="590" height="54"></canvas>
+  </div>
+  <div class="panel pbot" style="grid-column:3">
+    <div class="wlbl">Head pitch signal</div>
+    <canvas class="wv" id="wh" width="192" height="54"></canvas>
+  </div>
+</main>
+
+<footer>
+  <span><span class="fd" id="fdot"></span><span id="flbl">SOCKET DISCONNECTED</span></span>
+  <span id="fface">FACE: NOT DETECTED</span>
+  <span id="fnod">NODS: 0</span>
+  <span id="fframes">FRAMES: 0</span>
+  <span id="fclk"></span>
+</footer>
+
+<script>
+// ── BOOT ──────────────────────────────────────────────
+setTimeout(()=>{
+  const b=document.getElementById('boot');
+  b.classList.add('fade');
+  setTimeout(()=>b.remove(),900);
+},2500);
+
+// ── PARTICLES ─────────────────────────────────────────
+const pc=document.getElementById('pc');
+const pctx=pc.getContext('2d');
+let pts=[];
+function resizePC(){pc.width=window.innerWidth;pc.height=window.innerHeight;initPts();}
+function initPts(){
+  pts=Array.from({length:70},()=>({
+    x:Math.random()*pc.width,y:Math.random()*pc.height,
+    r:Math.random()*1.1+0.2,
+    vx:(Math.random()-.5)*.25,vy:(Math.random()-.5)*.25,
+    a:Math.random()*.35+.08,
+    c:Math.random()>.55?'#00ffe7':'#0080ff'
+  }));
+}
+window.addEventListener('resize',resizePC);
+resizePC();
+(function animPts(){
+  pctx.clearRect(0,0,pc.width,pc.height);
+  for(const p of pts){
+    p.x+=p.vx;p.y+=p.vy;
+    if(p.x<0)p.x=pc.width;if(p.x>pc.width)p.x=0;
+    if(p.y<0)p.y=pc.height;if(p.y>pc.height)p.y=0;
+    pctx.beginPath();pctx.arc(p.x,p.y,p.r,0,Math.PI*2);
+    pctx.fillStyle=p.c;pctx.globalAlpha=p.a;pctx.fill();
+  }
+  pctx.globalAlpha=1;
+  for(let i=0;i<pts.length;i++){
+    for(let j=i+1;j<pts.length;j++){
+      const dx=pts[i].x-pts[j].x,dy=pts[i].y-pts[j].y;
+      const d=Math.sqrt(dx*dx+dy*dy);
+      if(d<85){
+        pctx.beginPath();pctx.moveTo(pts[i].x,pts[i].y);pctx.lineTo(pts[j].x,pts[j].y);
+        pctx.strokeStyle='#00ffe7';pctx.globalAlpha=(1-d/85)*.07;pctx.lineWidth=.5;pctx.stroke();
+      }
+    }
+  }
+  pctx.globalAlpha=1;
+  requestAnimationFrame(animPts);
+})();
+
+// ── ORB ───────────────────────────────────────────────
+const orbc=document.getElementById('orbc');
+const octx=orbc.getContext('2d');
+function drawOrb(level){
+  const W=orbc.width,H=orbc.height,cx=W/2,cy=H/2,r=48;
+  octx.clearRect(0,0,W,H);
+  const col=level===0?'#00ffe7':level===1?'#ffcc00':'#ff2d78';
+  const glr=level===0?'rgba(0,255,231,':level===1?'rgba(255,204,0,':'rgba(255,45,120,';
+  // Glow rings
+  for(let i=3;i>=1;i--){
+    octx.beginPath();octx.arc(cx,cy,r+i*7,0,Math.PI*2);
+    octx.strokeStyle=col;octx.globalAlpha=.035*i;octx.lineWidth=6;octx.stroke();
+  }
+  octx.globalAlpha=1;
+  // BG
+  octx.beginPath();octx.arc(cx,cy,r,0,Math.PI*2);octx.fillStyle='rgba(0,0,0,.65)';octx.fill();
+  // Fill slice
+  const pct=level/2;
+  if(pct>0){
+    octx.beginPath();octx.moveTo(cx,cy);
+    octx.arc(cx,cy,r,-Math.PI/2,-Math.PI/2+pct*Math.PI*2);
+    octx.closePath();octx.fillStyle=glr+'.1)';octx.fill();
+  }
+  // Outer ring
+  octx.beginPath();octx.arc(cx,cy,r,0,Math.PI*2);
+  octx.strokeStyle=col;octx.lineWidth=1.5;octx.globalAlpha=.3;octx.stroke();
+  // Progress arc
+  if(pct>0){
+    octx.beginPath();octx.arc(cx,cy,r,-Math.PI/2,-Math.PI/2+pct*Math.PI*2);
+    octx.strokeStyle=col;octx.lineWidth=3;octx.globalAlpha=1;octx.lineCap='round';octx.stroke();octx.lineCap='butt';
+  }
+  // Ticks
+  octx.globalAlpha=.18;
+  for(let i=0;i<24;i++){
+    const a=(i/24)*Math.PI*2;
+    octx.beginPath();
+    octx.moveTo(cx+Math.cos(a)*(r-6),cy+Math.sin(a)*(r-6));
+    octx.lineTo(cx+Math.cos(a)*(r-2),cy+Math.sin(a)*(r-2));
+    octx.strokeStyle=col;octx.lineWidth=1;octx.stroke();
+  }
+  octx.globalAlpha=1;
+  // Center dot
+  octx.beginPath();octx.arc(cx,cy,4,0,Math.PI*2);
+  octx.fillStyle=col;octx.shadowColor=col;octx.shadowBlur=10;octx.fill();octx.shadowBlur=0;
+}
+drawOrb(0);
+
+// ── WAVEFORMS ─────────────────────────────────────────
+const N=100;
+const earB=Array(N).fill(.3),pcB=Array(N).fill(0),htB=Array(N).fill(0);
+function drawWave(id,buf,col,gcol,lo,hi){
+  const c=document.getElementById(id);
+  const cx=c.getContext('2d');
+  const W=c.width,H=c.height;
+  cx.clearRect(0,0,W,H);
+  // Grid
+  cx.strokeStyle='rgba(0,255,231,.05)';cx.lineWidth=1;
+  for(let i=1;i<4;i++){const y=(H/4)*i;cx.beginPath();cx.moveTo(0,y);cx.lineTo(W,y);cx.stroke();}
+  // Fill
+  cx.beginPath();
+  for(let i=0;i<buf.length;i++){
+    const x=(i/(buf.length-1))*W;
+    const n=Math.max(0,Math.min(1,(buf[i]-lo)/(hi-lo)));
+    const y=H-n*(H-6)-3;
+    i===0?cx.moveTo(x,y):cx.lineTo(x,y);
+  }
+  cx.lineTo(W,H);cx.lineTo(0,H);cx.closePath();
+  cx.fillStyle=gcol+'0.07)';cx.fill();
+  // Line
+  cx.beginPath();
+  for(let i=0;i<buf.length;i++){
+    const x=(i/(buf.length-1))*W;
+    const n=Math.max(0,Math.min(1,(buf[i]-lo)/(hi-lo)));
+    const y=H-n*(H-6)-3;
+    i===0?cx.moveTo(x,y):cx.lineTo(x,y);
+  }
+  cx.strokeStyle=col;cx.lineWidth=1.5;cx.shadowColor=col;cx.shadowBlur=4;cx.stroke();cx.shadowBlur=0;
+  // End dot
+  const ln=buf[buf.length-1];
+  const yn=H-Math.max(0,Math.min(1,(ln-lo)/(hi-lo)))*(H-6)-3;
+  cx.beginPath();cx.arc(W-2,yn,3,0,Math.PI*2);
+  cx.fillStyle=col;cx.shadowColor=col;cx.shadowBlur=8;cx.fill();cx.shadowBlur=0;
+}
+setInterval(()=>{
+  drawWave('we',earB,'#00ffe7','rgba(0,255,231,',0,.5);
+  drawWave('wp',pcB,'#ffcc00','rgba(255,204,0,',0,100);
+  drawWave('wh',htB,'#0080ff','rgba(0,128,255,',-30,30);
+},80);
+
+// ── CLOCK ─────────────────────────────────────────────
+setInterval(()=>{
+  const t=new Date().toLocaleTimeString('en-GB',{hour12:false});
+  document.getElementById('clk').textContent=t;
+  document.getElementById('fclk').textContent='IST '+t;
+},1000);
+
+// ── SOCKET ────────────────────────────────────────────
+const socket=io({transports:['websocket']});
+const fdot=document.getElementById('fdot');
+socket.on('connect',()=>{fdot.className='fd on';document.getElementById('flbl').textContent='SOCKET CONNECTED';});
+socket.on('disconnect',()=>{fdot.className='fd';document.getElementById('flbl').textContent='SOCKET DISCONNECTED';});
+
+// ── WEBCAM ────────────────────────────────────────────
+let streaming=false,frameCount=0;
+const webcam=document.getElementById('webcam');
+
+function initSensor(){
+  navigator.mediaDevices.getUserMedia({video:{width:640,height:480}})
+    .then(stream=>{
+      webcam.srcObject=stream;
+      webcam.style.display='block';
+      document.getElementById('start-btn').style.display='none';
+      streaming=true;
+      document.getElementById('sys-pill').className='pill p-l';
+      document.getElementById('sys-pill').textContent='LIVE';
+      document.getElementById('hd-tl').innerHTML='SENSOR: ONLINE<br>STREAM: ACTIVE';
+      setInterval(sendFrame,100);
+      addLog('Sensor initialised — dual stream active');
+    })
+    .catch(e=>alert('Camera access error: '+e.message));
+}
+
+function sendFrame(){
+  if(!streaming||webcam.readyState<2)return;
+  frameCount++;
+  const tmp=document.createElement('canvas');
+  tmp.width=webcam.videoWidth;tmp.height=webcam.videoHeight;
+  const tc=tmp.getContext('2d');
+  tc.scale(-1,1);tc.drawImage(webcam,-tmp.width,0,tmp.width,tmp.height);
+  socket.emit('frame',{image:tmp.toDataURL('image/jpeg',.65)});
+  document.getElementById('hd-bl').innerHTML='FRAMES: '+frameCount+'<br>LAT: &lt;1ms';
+  document.getElementById('fframes').textContent='FRAMES: '+frameCount;
+}
+
+// ── RESULTS ───────────────────────────────────────────
+let lastLevel=0;
+socket.on('result',d=>{
+  earB.push(d.ear);earB.shift();
+  pcB.push(d.perclos);pcB.shift();
+  htB.push(d.pitch);htB.shift();
+
+  // EAR
+  sv('v-ear',d.ear.toFixed(3),d.ear<.25?'d':d.ear<.28?'w':'');
+  sb('b-ear',Math.max(0,100-(d.ear/.5)*100),d.eye_fatigue?'var(--c3)':'var(--c1)');
+  sc('mc-ear',d.eye_fatigue?'ad':'');
+
+  // PERCLOS
+  sv('v-pc',d.perclos.toFixed(1)+'%',d.eye_fatigue?'d':d.perclos>20?'w':'');
+  sb('b-pc',Math.min(d.perclos*2,100),d.eye_fatigue?'var(--c3)':d.perclos>20?'var(--c4)':'var(--c1)');
+  sc('mc-pc',d.eye_fatigue?'ad':d.perclos>20?'aw':'');
+
+  // Pitch
+  sv('v-pt',d.pitch.toFixed(1)+'°',d.head_fatigue?'d':Math.abs(d.pitch)>10?'w':'');
+  sb('b-pt',Math.min(Math.abs(d.pitch)/30*100,100),d.head_fatigue?'var(--c3)':'var(--c1)');
+  sc('mc-pt',d.head_fatigue?'ad':'');
+
+  // Yaw
+  sv('v-yw',d.yaw.toFixed(1)+'°','');
+  sb('b-yw',Math.min(Math.abs(d.yaw)/45*100,100),'var(--c2)');
+
+  // Orb
+  drawOrb(d.fatigue_level);
+  const os=document.getElementById('oscore');
+  os.textContent=d.fatigue_level;
+  os.className='orb-score'+(d.fatigue_level===2?' d':d.fatigue_level===1?' w':'');
+  document.getElementById('olbl').textContent=['NOMINAL — ALERT','WARNING — DROWSY','CRITICAL — FATIGUE'][d.fatigue_level];
+
+  // Eye stream
+  const ep=Math.min(d.perclos*2,100);
+  const ef=document.getElementById('eye-fill');
+  ef.style.width=ep+'%';
+  ef.style.background=d.eye_fatigue?'var(--c3)':d.perclos>20?'var(--c4)':'var(--c1)';
+  ef.style.boxShadow='0 0 6px '+(d.eye_fatigue?'var(--c3)':'var(--c1)');
+  setBadge('eye-badge',d.eye_fatigue?'FATIGUE':'NOMINAL',d.eye_fatigue?'b-d':'b-ok');
+  document.getElementById('sb-eye').className='sblock'+(d.eye_fatigue?' ad':'');
+
+  // Head stream
+  const hp=Math.min((d.nod_count/3)*100,100);
+  const hf=document.getElementById('head-fill');
+  hf.style.width=hp+'%';
+  hf.style.background=d.head_fatigue?'var(--c3)':'var(--c1)';
+  hf.style.boxShadow='0 0 6px '+(d.head_fatigue?'var(--c3)':'var(--c1)');
+  setBadge('head-badge',d.head_fatigue?'FATIGUE':'NOMINAL',d.head_fatigue?'b-d':'b-ok');
+  document.getElementById('sb-head').className='sblock'+(d.head_fatigue?' ad':'');
+
+  // Blink
+  document.getElementById('bnum').textContent=String(d.blinks).padStart(3,'0');
+
+  // HUD
+  document.getElementById('hd-tr').innerHTML='FPS: 10<br>PERCLOS: '+d.perclos.toFixed(1)+'%';
+  document.getElementById('hd-br').innerHTML='NOD: '+d.nod_count+'<br>BLINK: '+d.blinks;
+
+  // Alert
+  const ao=document.getElementById('ao');
+  if(d.fatigue_level===2){
+    ao.className='show danger';
+    document.getElementById('atitle').textContent='FATIGUE DETECTED';
+    document.getElementById('asub').textContent='BOTH STREAMS ACTIVE — IMMEDIATE BREAK REQUIRED';
+    document.getElementById('sys-pill').className='pill p-d';
+    document.getElementById('sys-pill').textContent='CRITICAL';
+  }else if(d.fatigue_level===1){
+    ao.className='show warn';
+    document.getElementById('atitle').textContent='DROWSINESS WARNING';
+    document.getElementById('asub').textContent='ONE STREAM ACTIVE — MONITOR CLOSELY';
+    document.getElementById('sys-pill').className='pill p-w';
+    document.getElementById('sys-pill').textContent='WARNING';
+  }else{
+    ao.className='';
+    if(streaming){document.getElementById('sys-pill').className='pill p-l';document.getElementById('sys-pill').textContent='LIVE';}
+  }
+
+  if(d.fatigue_level!==lastLevel){
+    addLog(d.fatigue_level===0?'Status nominal':d.fatigue_level===1?'WARNING: Drowsiness detected':'CRITICAL: Fatigue confirmed');
+    lastLevel=d.fatigue_level;
+  }
+
+  document.getElementById('fface').textContent='FACE: '+(d.face?'DETECTED':'NOT DETECTED');
+  document.getElementById('fnod').textContent='NODS: '+d.nod_count;
+});
+
+function sv(id,txt,cls){const e=document.getElementById(id);e.textContent=txt;e.className='mc-val'+(cls?' '+cls:'');}
+function sb(id,pct,col){const e=document.getElementById(id);e.style.width=pct+'%';e.style.background=col;e.style.boxShadow='0 0 5px '+col;}
+function sc(id,cls){const e=document.getElementById(id);e.className='mc'+(cls?' '+cls:'');}
+function setBadge(id,txt,cls){const e=document.getElementById(id);e.textContent=txt;e.className='sbadge '+cls;}
+function addLog(msg){
+  const lp=document.getElementById('logp');
+  const t=new Date().toLocaleTimeString('en-GB',{hour12:false});
+  lp.innerHTML=`<div>> ${t} ${msg}</div>`+lp.innerHTML;
+  if(lp.children.length>40)lp.removeChild(lp.lastChild);
+}
+</script>
+</body>
+</html>
